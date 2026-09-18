@@ -18,6 +18,14 @@ async function main() {
   const db = new Client({ connectionString: process.env.DATABASE_URL })
   await db.connect()
 
+  // Idempotence : si les données sont déjà là, on ne recharge rien.
+  const { rows: [{ count }] } = await db.query(`SELECT count(*) FROM produits`)
+  if (Number(count) > 0) {
+    console.log('Données déjà chargées, rien à faire.')
+    await db.end()
+    return
+  }
+
   for (const p of lire('catalogue.csv')) {
     await db.query(
       `INSERT INTO produits (ref, modele, famille, genre, couleur, taille, matiere,

@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE produits (
+CREATE TABLE IF NOT EXISTS produits (
   ref                  TEXT PRIMARY KEY,
   modele               TEXT NOT NULL,
   famille              TEXT,
@@ -17,7 +17,7 @@ CREATE TABLE produits (
   embedding            vector(512)
 );
 
-CREATE TABLE clients (
+CREATE TABLE IF NOT EXISTS clients (
   client_id       TEXT PRIMARY KEY,
   nom             TEXT,
   telephone       TEXT UNIQUE,
@@ -28,7 +28,7 @@ CREATE TABLE clients (
   segment         TEXT
 );
 
-CREATE TABLE livraison (
+CREATE TABLE IF NOT EXISTS livraison (
   ville                   TEXT PRIMARY KEY,
   frais_mad               NUMERIC(10,2) NOT NULL,
   delai_heures            INTEGER,
@@ -36,7 +36,7 @@ CREATE TABLE livraison (
   retrait_boutique        BOOLEAN
 );
 
-CREATE TABLE promotions (
+CREATE TABLE IF NOT EXISTS promotions (
   id              SERIAL PRIMARY KEY,
   ref             TEXT REFERENCES produits(ref),
   prix_normal_mad NUMERIC(10,2),
@@ -46,7 +46,7 @@ CREATE TABLE promotions (
   condition       TEXT
 );
 
-CREATE TABLE commandes (
+CREATE TABLE IF NOT EXISTS commandes (
   commande_id         TEXT PRIMARY KEY,
   client_id           TEXT REFERENCES clients(client_id),
   date                DATE,
@@ -61,7 +61,7 @@ CREATE TABLE commandes (
   created_at          TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE commande_lignes (
+CREATE TABLE IF NOT EXISTS commande_lignes (
   id                BIGSERIAL PRIMARY KEY,
   commande_id       TEXT REFERENCES commandes(commande_id),
   ref               TEXT,
@@ -71,7 +71,7 @@ CREATE TABLE commande_lignes (
   prix_unitaire_mad NUMERIC(10,2)
 );
 
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id  TEXT,
   telephone  TEXT,
@@ -81,7 +81,7 @@ CREATE TABLE conversations (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id              BIGSERIAL PRIMARY KEY,
   conversation_id UUID REFERENCES conversations(id),
   role            TEXT,
@@ -89,7 +89,7 @@ CREATE TABLE messages (
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE paniers (
+CREATE TABLE IF NOT EXISTS paniers (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID REFERENCES conversations(id),
   client_id       TEXT,
@@ -98,7 +98,7 @@ CREATE TABLE paniers (
   updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE traces (
+CREATE TABLE IF NOT EXISTS traces (
   id              BIGSERIAL PRIMARY KEY,
   conversation_id UUID,
   etape           TEXT,
@@ -111,7 +111,7 @@ CREATE TABLE traces (
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE TABLE escalades (
+CREATE TABLE IF NOT EXISTS escalades (
   id              BIGSERIAL PRIMARY KEY,
   conversation_id UUID REFERENCES conversations(id),
   motif           TEXT,
@@ -120,9 +120,9 @@ CREATE TABLE escalades (
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_produits_stock   ON produits(stock);
-CREATE INDEX idx_promos_ref_dates ON promotions(ref, debut, fin);
-CREATE INDEX idx_clients_tel      ON clients(telephone);
-CREATE INDEX idx_traces_conv      ON traces(conversation_id);
-CREATE INDEX idx_paniers_statut   ON paniers(statut, updated_at);
-CREATE INDEX idx_commandes_client ON commandes(client_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_produits_stock   ON produits(stock);
+CREATE INDEX IF NOT EXISTS idx_promos_ref_dates ON promotions(ref, debut, fin);
+CREATE INDEX IF NOT EXISTS idx_clients_tel      ON clients(telephone);
+CREATE INDEX IF NOT EXISTS idx_traces_conv      ON traces(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_paniers_statut   ON paniers(statut, updated_at);
+CREATE INDEX IF NOT EXISTS idx_commandes_client ON commandes(client_id, created_at);

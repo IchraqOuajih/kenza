@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import Dashboard from './pages/Dashboard'
+import Dashboard from './pages/dashboard'
 
 type Trace = { etape: string; outil?: string; entree?: any; sortie?: any; decision: string }
 type Msg = { role: 'client' | 'kenza'; text: string }

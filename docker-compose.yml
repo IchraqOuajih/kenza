@@ -6,7 +6,51 @@ services:
       POSTGRES_PASSWORD: kenza
       POSTGRES_DB: kenza
     ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kenza"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   redis:
     image: redis:7
     ports: ["6379:6379"]
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kenza:kenza@postgres:5432/kenza
+      REDIS_URL: redis://redis:6379
+    ports: ["3000:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -c "./api/node_modules/.bin/tsx api/src/db/migrate.ts &&
+             ./api/node_modules/.bin/tsx api/src/db/load-csv.ts &&
+             ./api/node_modules/.bin/tsx api/src/server.ts"
+
+  worker:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://kenza:kenza@postgres:5432/kenza
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      api:
+        condition: service_started
+    command: ["./api/node_modules/.bin/tsx", "api/src/worker.ts"]
+
+  web:
+    build:
+      context: ./web
+    ports: ["5173:5173"]
+    depends_on:
+      - api
