@@ -1,6 +1,7 @@
 import { getModel } from './llm'
 import { searchProducts, checkStock, findAlternatives } from './tools/catalogue'
 import { computePrice, enMad } from './tools/pricing'
+import { creerCommande, historiqueClient } from './tools/orders'
 import { REMISE_MAX_PCT } from './tools/policy'
 
 export type Trace = { etape: string; outil?: string; entree?: any; sortie?: any; decision: string }
@@ -14,7 +15,6 @@ Tu écris la darija en caractères latins (arabizi), jamais en alphabet arabe.
 Exception : si le client t'écrit en alphabet arabe, tu réponds entièrement en alphabet arabe.
 Un message = un seul alphabet. Ne mélange jamais les deux, même pour un seul mot.
 
-
 RÈGLES ABSOLUES :
 - Tu n'annonces JAMAIS un prix, un stock ou un frais de livraison sans avoir appelé l'outil correspondant.
 - Tu utilises toujours les références exactes du catalogue (format REF-0000), obtenues via rechercher_produit. Tu n'en inventes jamais.
@@ -25,6 +25,8 @@ RÈGLES ABSOLUES :
 - Ville absente de la grille de livraison → tu escalades, tu n'estimes pas.
 - Facture au nom d'une société, réclamation, remboursement en espèces → tu escalades.
 - Dès qu'une escalade est nécessaire, tu DOIS appeler l'outil escalader. Dire que tu transmets sans l'appeler est une faute.
+- Tu ne crées JAMAIS une commande sans confirmation explicite du client, et sans connaître sa ville de livraison.
+- Après création d'une commande, tu annonces le numéro et le total exacts renvoyés par l'outil.
 - Si le message est ambigu, tu demandes une précision au lieu de deviner.`
 
 const TOOLS = [
@@ -42,7 +44,7 @@ const TOOLS = [
   }},
   { type: 'function' as const, function: {
     name: 'alternatives',
-    description: 'Produits disponibles de la même famille. À appeler dès quun stock vaut 0.',
+    description: "Produits disponibles de la même famille. À appeler dès qu'un stock vaut 0.",
     parameters: { type: 'object', properties: {
       ref: { type: 'string', description: 'Référence exacte du catalogue, format REF-0000.' },
     }, required: ['ref'] },
@@ -60,15 +62,32 @@ const TOOLS = [
     }, required: ['lignes', 'ville'] },
   }},
   { type: 'function' as const, function: {
+    name: 'creer_commande',
+    description: "Enregistre la commande en base et décrémente le stock. À n'appeler QUE lorsque le client a confirmé explicitement et que la ville de livraison est connue.",
+    parameters: { type: 'object', properties: {
+      lignes: { type: 'array', items: { type: 'object', properties: {
+        ref: { type: 'string', description: 'Référence exacte, format REF-0000.' },
+        quantite: { type: 'number' },
+      }, required: ['ref', 'quantite'] } },
+      ville: { type: 'string' },
+      remise_pct: { type: 'number' },
+    }, required: ['lignes', 'ville'] },
+  }},
+  { type: 'function' as const, function: {
+    name: 'historique_client',
+    description: 'Commandes passées du client. À appeler quand le client fait référence à un achat précédent.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  }},
+  { type: 'function' as const, function: {
     name: 'escalader',
-    description: "Transfère au commerçant avec le contexte. Obligatoire pour : ville hors grille, remise sous plancher, facture société, réclamation, remboursement en espèces, demande hors catalogue.",
+    description: 'Transfère au commerçant avec le contexte. Obligatoire pour : ville hors grille, remise sous plancher, facture société, réclamation, remboursement en espèces, demande hors catalogue.',
     parameters: { type: 'object', properties: {
       motif: { type: 'string' }, resume: { type: 'string' },
     }, required: ['motif', 'resume'] },
   }},
 ]
 
-async function executer(nom: string, args: any) {
+async function executer(nom: string, args: any, clientId: string) {
   switch (nom) {
     case 'rechercher_produit': return await searchProducts(args.query)
     case 'verifier_stock':     return { ref: args.ref, stock: await checkStock(args.ref) }
@@ -85,6 +104,10 @@ async function executer(nom: string, args: any) {
         total_mad: enMad(d.total),
       }
     }
+    case 'creer_commande':
+      return await creerCommande(clientId, args.lignes, args.ville, args.remise_pct ?? 0)
+    case 'historique_client':
+      return await historiqueClient(clientId)
     case 'escalader': return { escalade: true, ...args }
     default: throw new Error(`Outil inconnu : ${nom}`)
   }
@@ -116,7 +139,7 @@ export async function handleMessage(msg: Incoming): Promise<Outgoing> {
       const args = JSON.parse(tc.function.arguments || '{}')
       let sortie: any
       try {
-        sortie = await executer(tc.function.name, args)
+        sortie = await executer(tc.function.name, args, msg.clientId)
       } catch (e: any) {
         sortie = { erreur: e.message }
       }
