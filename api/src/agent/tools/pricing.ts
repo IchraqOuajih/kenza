@@ -15,13 +15,17 @@ export async function prixUnitaire(ref: string): Promise<number> {
      FROM produits p WHERE p.ref = $1`,
     [ref]
   )
-  if (!rows[0]) throw new Error(`Référence inconnue : ${ref}`)
+  if (!rows[0]) throw new Error(
+    `Référence inconnue : ${ref}. Appelle rechercher_produit pour obtenir la référence exacte au format REF-0000.`
+  )
   return enCentimes(rows[0].promo ?? rows[0].prix_mad)
 }
 
 export type Livraison = {
-  villeConnue: boolean; fraisCentimes: number
-  delaiHeures: number | null; paiementLivraison: boolean
+  villeConnue: boolean
+  fraisCentimes: number
+  delaiHeures: number | null
+  paiementLivraison: boolean
 }
 
 /** Ville absente de la grille → escalade, jamais d'estimation. */
@@ -55,15 +59,16 @@ export type Devis = {
 }
 
 /**
- * Calcule le devis complet. La remise est plafonnée à REMISE_MAX_PCT
- * dans le code : le modèle ne peut pas franchir ce plancher.
+ * Calcule le devis complet.
+ * La remise est plafonnée à REMISE_MAX_PCT dans le code :
+ * le modèle ne peut pas franchir ce plancher, quoi qu'il demande.
  */
 export async function computePrice(
   lignes: Ligne[],
   ville: string,
   remiseDemandeePct = 0
 ): Promise<Devis> {
-  const detail = []
+  const detail: Devis['lignes'] = []
   let sousTotal = 0
 
   for (const l of lignes) {
