@@ -3,6 +3,10 @@ import { searchProducts, checkStock, findAlternatives } from './tools/catalogue'
 import { computePrice, enMad } from './tools/pricing'
 import { creerCommande, historiqueClient } from './tools/orders'
 import { REMISE_MAX_PCT } from './tools/policy'
+import {
+  getOrCreateConversation, chargerHistorique,
+  sauverMessage, sauverTraces, sauverEscalade,
+} from '../db/conversations'
 
 export type Trace = { etape: string; outil?: string; entree?: any; sortie?: any; decision: string }
 export type Incoming = { clientId: string; text: string; channel: string }
@@ -27,6 +31,7 @@ RÈGLES ABSOLUES :
 - Dès qu'une escalade est nécessaire, tu DOIS appeler l'outil escalader. Dire que tu transmets sans l'appeler est une faute.
 - Tu ne crées JAMAIS une commande sans confirmation explicite du client, et sans connaître sa ville de livraison.
 - Après création d'une commande, tu annonces le numéro et le total exacts renvoyés par l'outil.
+- Tu te souviens de la conversation. Ne redemande jamais une information que le client t'a déjà donnée.
 - Si le message est ambigu, tu demandes une précision au lieu de deviner.`
 
 const TOOLS = [
@@ -87,7 +92,9 @@ const TOOLS = [
   }},
 ]
 
-async function executer(nom: string, args: any, clientId: string) {
+type Ctx = { clientId: string; conversationId: string }
+
+async function executer(nom: string, args: any, ctx: Ctx) {
   switch (nom) {
     case 'rechercher_produit': return await searchProducts(args.query)
     case 'verifier_stock':     return { ref: args.ref, stock: await checkStock(args.ref) }
@@ -105,10 +112,13 @@ async function executer(nom: string, args: any, clientId: string) {
       }
     }
     case 'creer_commande':
-      return await creerCommande(clientId, args.lignes, args.ville, args.remise_pct ?? 0)
+      return await creerCommande(ctx.clientId, args.lignes, args.ville, args.remise_pct ?? 0)
     case 'historique_client':
-      return await historiqueClient(clientId)
-    case 'escalader': return { escalade: true, ...args }
+      return await historiqueClient(ctx.clientId)
+    case 'escalader': {
+      const id = await sauverEscalade(ctx.conversationId, args.motif, args.resume)
+      return { escalade_enregistree: true, ticket: id, ...args }
+    }
     default: throw new Error(`Outil inconnu : ${nom}`)
   }
 }
@@ -117,11 +127,24 @@ const MAX_TOURS = 6
 
 export async function handleMessage(msg: Incoming): Promise<Outgoing> {
   const { client, model } = getModel('fast')
+  const conversationId = await getOrCreateConversation(msg.clientId, msg.channel)
+  const historique = await chargerHistorique(conversationId)
+  const ctx: Ctx = { clientId: msg.clientId, conversationId }
+
   const traces: Trace[] = []
   const messages: any[] = [
     { role: 'system', content: SYSTEM },
+    ...historique,
     { role: 'user', content: msg.text },
   ]
+
+  await sauverMessage(conversationId, 'client', msg.text)
+
+  const terminer = async (text: string): Promise<Outgoing> => {
+    await sauverMessage(conversationId, 'agent', text)
+    await sauverTraces(conversationId, traces)
+    return { text, traces }
+  }
 
   for (let tour = 0; tour < MAX_TOURS; tour++) {
     const r = await client.chat.completions.create({
@@ -132,14 +155,14 @@ export async function handleMessage(msg: Incoming): Promise<Outgoing> {
 
     if (!m.tool_calls?.length) {
       traces.push({ etape: 'réponse', decision: "assez d'informations pour répondre" })
-      return { text: m.content ?? '', traces }
+      return await terminer(m.content ?? '')
     }
 
     for (const tc of m.tool_calls as any[]) {
       const args = JSON.parse(tc.function.arguments || '{}')
       let sortie: any
       try {
-        sortie = await executer(tc.function.name, args, msg.clientId)
+        sortie = await executer(tc.function.name, args, ctx)
       } catch (e: any) {
         sortie = { erreur: e.message }
       }
@@ -155,5 +178,5 @@ export async function handleMessage(msg: Incoming): Promise<Outgoing> {
   }
 
   traces.push({ etape: 'arrêt', decision: "limite d'itérations atteinte, j'escalade" })
-  return { text: 'Je transmets votre demande au commerçant, il revient vers vous.', traces }
+  return await terminer('Je transmets votre demande au commerçant, il revient vers vous.')
 }
