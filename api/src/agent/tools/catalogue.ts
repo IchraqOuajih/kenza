@@ -5,17 +5,26 @@ export type Produit = {
   taille: string; matiere: string; prix_mad: string; stock: number
 }
 
-/** Recherche par mots-clés sur le catalogue. */
+/** Recherche mot à mot sur le catalogue : tous les mots, sinon au moins un. */
 export async function searchProducts(query: string, limit = 5): Promise<Produit[]> {
-  const { rows } = await db.query(
-    `SELECT ref, modele, famille, couleur, taille, matiere, prix_mad, stock
-     FROM produits
-     WHERE modele ILIKE $1 OR famille ILIKE $1 OR couleur ILIKE $1 OR matiere ILIKE $1
-     ORDER BY stock DESC
-     LIMIT $2`,
-    [`%${query}%`, limit]
-  )
-  return rows
+  const mots = query.toLowerCase().split(/\s+/).filter(m => m.length > 2)
+  if (!mots.length) return []
+
+  const base = `SELECT ref, modele, famille, couleur, taille, matiere, prix_mad, stock FROM (
+      SELECT *, lower(modele||' '||famille||' '||couleur||' '||taille||' '||matiere) AS txt
+      FROM produits
+    ) p WHERE `
+
+  const params = mots.map(m => `%${m}%`)
+  const conds  = mots.map((_, i) => `txt ILIKE $${i + 1}`)
+
+  for (const op of [' AND ', ' OR ']) {
+    const { rows } = await db.query(
+      `${base}${conds.join(op)} ORDER BY stock DESC LIMIT ${limit}`, params
+    )
+    if (rows.length) return rows
+  }
+  return []
 }
 
 /** Un produit précis par sa référence. */
