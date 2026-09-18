@@ -1,13 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 type Trace = { etape: string; outil?: string; entree?: any; sortie?: any; decision: string }
 type Msg = { role: 'client' | 'kenza'; text: string }
+
+const CLIENT_ID = 'demo'
+const API = 'http://localhost:3000'
 
 export default function App() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [traces, setTraces] = useState<Trace[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Sonde la base : c'est ainsi qu'une relance décidée par l'agent apparaît toute seule.
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (loading) return
+      try {
+        const r = await fetch(`${API}/api/messages?clientId=${CLIENT_ID}`)
+        const rows = await r.json()
+        if (Array.isArray(rows) && rows.length !== msgs.length) {
+          setMsgs(rows.map((m: any) => ({
+            role: m.role === 'client' ? 'client' : 'kenza',
+            text: m.contenu,
+          })))
+        }
+      } catch { /* API pas encore prête */ }
+    }, 3000)
+    return () => clearInterval(t)
+  }, [msgs.length, loading])
 
   async function envoyer() {
     const text = input.trim()
@@ -17,16 +38,16 @@ export default function App() {
     setLoading(true)
     setTraces([])
     try {
-      const r = await fetch('http://localhost:3000/api/chat', {
+      const r = await fetch(`${API}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: 'demo', text }),
+        body: JSON.stringify({ clientId: CLIENT_ID, text }),
       })
       const data = await r.json()
       setMsgs(m => [...m, { role: 'kenza', text: data.text }])
       setTraces(data.traces)
     } catch {
-      setMsgs(m => [...m, { role: 'kenza', text: '(erreur de connexion à l\'API)' }])
+      setMsgs(m => [...m, { role: 'kenza', text: "(erreur de connexion à l'API)" }])
     }
     setLoading(false)
   }

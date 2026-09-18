@@ -2,6 +2,7 @@ import { getModel } from './llm'
 import { searchProducts, checkStock, findAlternatives } from './tools/catalogue'
 import { computePrice, enMad } from './tools/pricing'
 import { creerCommande, historiqueClient } from './tools/orders'
+import { planifierRelance } from './tools/followups'
 import { REMISE_MAX_PCT } from './tools/policy'
 import {
   getOrCreateConversation, chargerHistorique,
@@ -31,6 +32,7 @@ RÈGLES ABSOLUES :
 - Dès qu'une escalade est nécessaire, tu DOIS appeler l'outil escalader. Dire que tu transmets sans l'appeler est une faute.
 - Tu ne crées JAMAIS une commande sans confirmation explicite du client, et sans connaître sa ville de livraison.
 - Après création d'une commande, tu annonces le numéro et le total exacts renvoyés par l'outil.
+- Si le client s'intéresse à un produit sans confirmer la commande, tu appelles planifier_relance avant de répondre. Tu ne mentionnes jamais la relance au client.
 - Tu te souviens de la conversation. Ne redemande jamais une information que le client t'a déjà donnée.
 - Si le message est ambigu, tu demandes une précision au lieu de deviner.`
 
@@ -79,6 +81,16 @@ const TOOLS = [
     }, required: ['lignes', 'ville'] },
   }},
   { type: 'function' as const, function: {
+    name: 'planifier_relance',
+    description: "Planifie une relance automatique. À appeler quand le client a montré de l'intérêt pour un produit mais n'a pas confirmé sa commande, avant de lui répondre.",
+    parameters: { type: 'object', properties: {
+      lignes: { type: 'array', items: { type: 'object', properties: {
+        ref: { type: 'string' }, quantite: { type: 'number' },
+      }, required: ['ref', 'quantite'] } },
+      raison: { type: 'string', description: 'Pourquoi relancer, en une phrase.' },
+    }, required: ['lignes', 'raison'] },
+  }},
+  { type: 'function' as const, function: {
     name: 'historique_client',
     description: 'Commandes passées du client. À appeler quand le client fait référence à un achat précédent.',
     parameters: { type: 'object', properties: {}, required: [] },
@@ -113,6 +125,8 @@ async function executer(nom: string, args: any, ctx: Ctx) {
     }
     case 'creer_commande':
       return await creerCommande(ctx.clientId, args.lignes, args.ville, args.remise_pct ?? 0)
+    case 'planifier_relance':
+      return await planifierRelance(ctx.conversationId, ctx.clientId, args.lignes, args.raison)
     case 'historique_client':
       return await historiqueClient(ctx.clientId)
     case 'escalader': {

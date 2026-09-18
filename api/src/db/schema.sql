@@ -1,7 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- ─── Données métier (chargées depuis les CSV) ───
-
 CREATE TABLE produits (
   ref                  TEXT PRIMARY KEY,
   modele               TEXT NOT NULL,
@@ -59,7 +57,8 @@ CREATE TABLE commandes (
   total_mad           NUMERIC(10,2),
   ville_livraison     TEXT,
   paiement            TEXT,
-  creee_par_agent     BOOLEAN DEFAULT FALSE
+  creee_par_agent     BOOLEAN DEFAULT FALSE,
+  created_at          TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE commande_lignes (
@@ -71,8 +70,6 @@ CREATE TABLE commande_lignes (
   quantite          INTEGER,
   prix_unitaire_mad NUMERIC(10,2)
 );
-
--- ─── État de l'agent ───
 
 CREATE TABLE conversations (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -87,7 +84,7 @@ CREATE TABLE conversations (
 CREATE TABLE messages (
   id              BIGSERIAL PRIMARY KEY,
   conversation_id UUID REFERENCES conversations(id),
-  role            TEXT,              -- client | agent | commercant
+  role            TEXT,
   contenu         TEXT,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -97,7 +94,7 @@ CREATE TABLE paniers (
   conversation_id UUID REFERENCES conversations(id),
   client_id       TEXT,
   lignes          JSONB NOT NULL DEFAULT '[]',
-  statut          TEXT DEFAULT 'ouvert',   -- ouvert | commande | abandonne
+  statut          TEXT DEFAULT 'ouvert',
   updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
@@ -123,8 +120,9 @@ CREATE TABLE escalades (
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_produits_stock    ON produits(stock);
-CREATE INDEX idx_promos_ref_dates  ON promotions(ref, debut, fin);
-CREATE INDEX idx_clients_tel       ON clients(telephone);
-CREATE INDEX idx_traces_conv       ON traces(conversation_id);
-CREATE INDEX idx_paniers_statut    ON paniers(statut, updated_at);
+CREATE INDEX idx_produits_stock   ON produits(stock);
+CREATE INDEX idx_promos_ref_dates ON promotions(ref, debut, fin);
+CREATE INDEX idx_clients_tel      ON clients(telephone);
+CREATE INDEX idx_traces_conv      ON traces(conversation_id);
+CREATE INDEX idx_paniers_statut   ON paniers(statut, updated_at);
+CREATE INDEX idx_commandes_client ON commandes(client_id, created_at);
