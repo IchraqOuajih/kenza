@@ -1,6 +1,8 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { handleMessage } from './agent'
+import { dashboardRoutes } from './routes/dashboard'
+import { db } from './db/client'
 import 'dotenv/config'
 
 async function main() {
@@ -14,16 +16,21 @@ async function main() {
     return await handleMessage({ clientId, text, channel: 'simulator' })
   })
 
-    app.get('/api/messages', async (req) => {
+  app.get('/api/messages', async (req) => {
     const { clientId } = req.query as { clientId: string }
-    const { rows } = await (await import('./db/client')).db.query(
-      `SELECT m.role, m.contenu, m.created_at FROM messages m
+    const { rows } = await db.query(
+      `SELECT m.role, m.contenu, m.created_at
+       FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
-       WHERE c.client_id = $1 ORDER BY m.created_at ASC`,
+       WHERE c.client_id = $1
+       ORDER BY m.created_at ASC`,
       [clientId]
     )
     return rows
   })
+
+  await app.register(dashboardRoutes)
+
   await app.listen({ port: 3000, host: '0.0.0.0' })
   console.log('API sur http://localhost:3000')
 }
