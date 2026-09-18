@@ -12,12 +12,11 @@ export default function App() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [traces, setTraces] = useState<Trace[]>([])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [enAttente, setEnAttente] = useState(0)
 
-  // Sonde la base : c'est ainsi qu'une relance décidée par l'agent apparaît toute seule.
   useEffect(() => {
     const t = setInterval(async () => {
-      if (loading || onglet !== 'chat') return
+      if (enAttente > 0 || onglet !== 'chat') return
       try {
         const r = await fetch(`${API}/api/messages?clientId=${CLIENT_ID}`)
         const rows = await r.json()
@@ -27,18 +26,17 @@ export default function App() {
             text: m.contenu,
           })))
         }
-      } catch { /* API pas encore prête */ }
+      } catch { /* API pas prête */ }
     }, 3000)
     return () => clearInterval(t)
-  }, [msgs.length, loading, onglet])
+  }, [msgs.length, enAttente, onglet])
 
   async function envoyer() {
     const text = input.trim()
-    if (!text || loading) return
+    if (!text) return
     setInput('')
     setMsgs(m => [...m, { role: 'client', text }])
-    setLoading(true)
-    setTraces([])
+    setEnAttente(n => n + 1)
     try {
       const r = await fetch(`${API}/api/chat`, {
         method: 'POST',
@@ -46,12 +44,15 @@ export default function App() {
         body: JSON.stringify({ clientId: CLIENT_ID, text }),
       })
       const data = await r.json()
-      setMsgs(m => [...m, { role: 'kenza', text: data.text }])
-      setTraces(data.traces)
+      // Une requête regroupée revient muette : seule la dernière porte la réponse.
+      if (data.text) {
+        setMsgs(m => [...m, { role: 'kenza', text: data.text }])
+        setTraces(data.traces ?? [])
+      }
     } catch {
       setMsgs(m => [...m, { role: 'kenza', text: "(erreur de connexion à l'API)" }])
     }
-    setLoading(false)
+    setEnAttente(n => n - 1)
   }
 
   return (
@@ -59,14 +60,10 @@ export default function App() {
       <header style={S.header}>
         <div style={S.marque}>Kenza</div>
         <nav style={S.nav}>
-          <button
-            style={{ ...S.onglet, ...(onglet === 'chat' ? S.actif : {}) }}
-            onClick={() => setOnglet('chat')}
-          >Conversation</button>
-          <button
-            style={{ ...S.onglet, ...(onglet === 'bord' ? S.actif : {}) }}
-            onClick={() => setOnglet('bord')}
-          >Tableau de bord</button>
+          <button style={{ ...S.onglet, ...(onglet === 'chat' ? S.actif : {}) }}
+                  onClick={() => setOnglet('chat')}>Conversation</button>
+          <button style={{ ...S.onglet, ...(onglet === 'bord' ? S.actif : {}) }}
+                  onClick={() => setOnglet('bord')}>Tableau de bord</button>
         </nav>
       </header>
 
@@ -79,7 +76,7 @@ export default function App() {
                   {m.text}
                 </div>
               ))}
-              {loading && <div style={{ ...S.bulle, ...S.kenza, opacity: .5 }}>…</div>}
+              {enAttente > 0 && <div style={{ ...S.bulle, ...S.kenza, opacity: .5 }}>…</div>}
             </div>
             <div style={S.saisie}>
               <input

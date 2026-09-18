@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import { handleMessage } from './agent'
+import { bufferiser } from './agent/buffer'
 import { dashboardRoutes } from './routes/dashboard'
 import { db } from './db/client'
 import 'dotenv/config'
@@ -13,7 +14,9 @@ async function main() {
 
   app.post('/api/chat', async (req) => {
     const { clientId, text } = req.body as { clientId: string; text: string }
-    return await handleMessage({ clientId, text, channel: 'simulator' })
+    return await bufferiser(clientId, text, (complet, nb) =>
+      handleMessage({ clientId, text: complet, channel: 'simulator', groupes: nb })
+    )
   })
 
   app.get('/api/messages', async (req) => {

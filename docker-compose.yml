@@ -25,6 +25,9 @@ services:
       DATABASE_URL: postgres://kenza:kenza@postgres:5432/kenza
       REDIS_URL: redis://redis:6379
     ports: ["3000:3000"]
+    volumes:
+      - ./api/src:/app/api/src
+      - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,6 +46,9 @@ services:
     environment:
       DATABASE_URL: postgres://kenza:kenza@postgres:5432/kenza
       REDIS_URL: redis://redis:6379
+    volumes:
+      - ./api/src:/app/api/src
+      - ./data:/app/data
     depends_on:
       api:
         condition: service_started
@@ -52,5 +58,7 @@ services:
     build:
       context: ./web
     ports: ["5173:5173"]
+    volumes:
+      - ./web/src:/app/src
     depends_on:
       - api
