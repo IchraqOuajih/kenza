@@ -1,122 +1,93 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+type Trace = { etape: string; outil?: string; entree?: any; sortie?: any; decision: string }
+type Msg = { role: 'client' | 'kenza'; text: string }
+
+export default function App() {
+  const [msgs, setMsgs] = useState<Msg[]>([])
+  const [traces, setTraces] = useState<Trace[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function envoyer() {
+    const text = input.trim()
+    if (!text || loading) return
+    setInput('')
+    setMsgs(m => [...m, { role: 'client', text }])
+    setLoading(true)
+    setTraces([])
+    try {
+      const r = await fetch('http://localhost:3000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: 'demo', text }),
+      })
+      const data = await r.json()
+      setMsgs(m => [...m, { role: 'kenza', text: data.text }])
+      setTraces(data.traces)
+    } catch {
+      setMsgs(m => [...m, { role: 'kenza', text: '(erreur de connexion à l\'API)' }])
+    }
+    setLoading(false)
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div style={S.page}>
+      <div style={S.chat}>
+        <h2 style={S.h}>Kenza</h2>
+        <div style={S.msgs}>
+          {msgs.map((m, i) => (
+            <div key={i} style={{ ...S.bulle, ...(m.role === 'client' ? S.client : S.kenza) }}>
+              {m.text}
+            </div>
+          ))}
+          {loading && <div style={{ ...S.bulle, ...S.kenza, opacity: .5 }}>…</div>}
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
+        <div style={S.saisie}>
+          <input
+            style={S.input}
+            value={input}
+            placeholder="chhal taman dyal…"
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && envoyer()}
+          />
+          <button style={S.btn} onClick={envoyer}>Envoyer</button>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </div>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <div style={S.panneau}>
+        <h2 style={S.h}>Raisonnement de l'agent</h2>
+        {traces.length === 0 && <p style={S.vide}>Les étapes s'afficheront ici.</p>}
+        {traces.map((t, i) => (
+          <div key={i} style={S.trace}>
+            <div style={S.traceTitre}>
+              {t.etape}{t.outil ? ` · ${t.outil}` : ''}
+            </div>
+            <div style={S.decision}>{t.decision}</div>
+            {t.entree && <pre style={S.pre}>{JSON.stringify(t.entree)}</pre>}
+            {t.sortie && <pre style={S.pre}>{JSON.stringify(t.sortie).slice(0, 300)}</pre>}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
-export default App
+const S: Record<string, React.CSSProperties> = {
+  page: { display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif', background: '#f5f6f8' },
+  chat: { flex: 1, display: 'flex', flexDirection: 'column', padding: 20, borderRight: '1px solid #ddd', background: '#fff' },
+  panneau: { width: 420, padding: 20, overflowY: 'auto', background: '#fafbfc' },
+  h: { fontSize: 16, margin: '0 0 16px', color: '#111' },
+  msgs: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 },
+  bulle: { maxWidth: '75%', padding: '10px 14px', borderRadius: 14, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap' },
+  client: { alignSelf: 'flex-end', background: '#2563eb', color: '#fff' },
+  kenza: { alignSelf: 'flex-start', background: '#eef0f3', color: '#111' },
+  saisie: { display: 'flex', gap: 8, marginTop: 16 },
+  input: { flex: 1, padding: '10px 12px', border: '1px solid #ccc', borderRadius: 8, fontSize: 14 },
+  btn: { padding: '10px 18px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', fontSize: 14, cursor: 'pointer' },
+  vide: { color: '#888', fontSize: 13 },
+  trace: { border: '1px solid #e3e5e8', borderRadius: 8, padding: 10, marginBottom: 8, background: '#fff' },
+  traceTitre: { fontSize: 12, fontWeight: 600, color: '#2563eb' },
+  decision: { fontSize: 13, margin: '4px 0' },
+  pre: { fontSize: 11, background: '#f6f7f9', padding: 6, borderRadius: 4, overflowX: 'auto', margin: '4px 0 0' },
+}
