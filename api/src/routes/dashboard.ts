@@ -5,24 +5,28 @@ export async function dashboardRoutes(app: FastifyInstance) {
   app.get('/api/dashboard', async () => {
     const { rows: [k] } = await db.query(`
       SELECT
-        (SELECT count(*) FROM conversations)                                      AS conversations,
-        (SELECT count(*) FROM conversations WHERE statut = 'ouverte')             AS conversations_ouvertes,
-        (SELECT count(*) FROM commandes WHERE creee_par_agent)                    AS commandes_agent,
-        (SELECT COALESCE(SUM(total_mad), 0) FROM commandes WHERE creee_par_agent) AS ca_agent,
-        (SELECT count(*) FROM escalades WHERE statut = 'ouverte')                 AS escalades_ouvertes,
-        (SELECT count(*) FROM paniers WHERE statut = 'relance')                   AS relances_envoyees,
-        (SELECT count(*) FROM paniers WHERE statut = 'ouvert')                    AS relances_en_attente,
+        (SELECT count(*) FROM conversations)                          AS conversations,
+        (SELECT count(*) FROM conversations WHERE statut = 'ouverte') AS conversations_ouvertes,
+        (SELECT count(*) FROM commandes
+           WHERE creee_par_agent AND statut <> 'annulée')             AS commandes_agent,
+        (SELECT COALESCE(SUM(total_mad), 0) FROM commandes
+           WHERE creee_par_agent AND statut <> 'annulée')             AS ca_agent,
+        (SELECT count(*) FROM commandes
+           WHERE creee_par_agent AND statut = 'annulée')              AS commandes_annulees,
+        (SELECT count(*) FROM escalades WHERE statut = 'ouverte')     AS escalades_ouvertes,
+        (SELECT count(*) FROM paniers WHERE statut = 'relance')       AS relances_envoyees,
+        (SELECT count(*) FROM paniers WHERE statut = 'ouvert')        AS relances_en_attente,
         (SELECT count(DISTINCT c.id)
            FROM conversations c
            JOIN commandes o
              ON o.client_id = c.client_id
             AND o.creee_par_agent
-            AND o.created_at >= c.created_at)                                     AS conversations_converties
+            AND o.statut <> 'annulée'
+            AND o.created_at >= c.created_at)                         AS conversations_converties
     `)
 
     const conversations = Number(k.conversations) || 0
     const converties = Number(k.conversations_converties) || 0
-    // Part des conversations ayant abouti à au moins une commande — plafonné à 100 %.
     const conversion = conversations ? Math.round((converties / conversations) * 100) : 0
 
     const { rows: dernieresCommandes } = await db.query(`
@@ -32,7 +36,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
     `)
 
     const { rows: escalades } = await db.query(`
-      SELECT e.id, e.motif, e.contexte, e.created_at, c.client_id
+      SELECT e.id, e.motif, e.contexte, e.created_at, c.client_id,
+             (SELECT json_agg(x) FROM (
+                SELECT role, contenu FROM messages
+                WHERE conversation_id = e.conversation_id
+                ORDER BY created_at DESC LIMIT 6
+              ) x) AS messages
       FROM escalades e
       LEFT JOIN conversations c ON c.id = e.conversation_id
       WHERE e.statut = 'ouverte'
@@ -53,6 +62,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         conversationsOuvertes: Number(k.conversations_ouvertes) || 0,
         commandes: Number(k.commandes_agent) || 0,
         caAgent: Number(k.ca_agent) || 0,
+        annulees: Number(k.commandes_annulees) || 0,
         conversion,
         escalades: Number(k.escalades_ouvertes) || 0,
         relancesEnvoyees: Number(k.relances_envoyees) || 0,

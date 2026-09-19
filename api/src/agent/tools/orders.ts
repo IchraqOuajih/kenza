@@ -12,9 +12,8 @@ export type Commande = {
 }
 
 /**
- * Crée la commande en base, en transaction :
- * vérifie le stock, le décrémente, écrit la commande et ses lignes.
- * Si quoi que ce soit échoue, rien n'est écrit.
+ * Crée la commande en transaction : vérifie le stock, le décrémente,
+ * écrit la commande et ses lignes. Si quoi que ce soit échoue, rien n'est écrit.
  */
 export async function creerCommande(
   clientId: string,
@@ -37,7 +36,6 @@ export async function creerCommande(
       [clientId]
     )
 
-    // verrouille les lignes produit et vérifie le stock réel
     for (const l of lignes) {
       const { rows } = await c.query(
         `SELECT modele, stock FROM produits WHERE ref = $1 FOR UPDATE`, [l.ref]
@@ -91,6 +89,72 @@ export async function creerCommande(
       delai_heures: devis.livraison.delaiHeures,
       total_mad: enMad(devis.total),
       lignes: lignes.map(l => ({ ref: l.ref, quantite: l.quantite })),
+    }
+  } catch (e) {
+    await c.query('ROLLBACK')
+    throw e
+  } finally {
+    c.release()
+  }
+}
+
+/** Les commandes que ce client peut encore annuler. */
+export async function commandesAnnulables(clientId: string) {
+  const { rows } = await db.query(
+    `SELECT c.commande_id, c.total_mad, c.ville_livraison, c.statut, c.created_at,
+            json_agg(json_build_object('ref', l.ref, 'modele', l.modele, 'quantite', l.quantite)) AS articles
+     FROM commandes c
+     LEFT JOIN commande_lignes l ON l.commande_id = c.commande_id
+     WHERE c.client_id = $1 AND c.statut = 'en préparation'
+     GROUP BY c.commande_id, c.total_mad, c.ville_livraison, c.statut, c.created_at
+     ORDER BY c.created_at DESC LIMIT 5`,
+    [clientId]
+  )
+  return rows
+}
+
+/**
+ * Annule une commande et remet les articles en stock, en transaction.
+ * Une commande déjà livrée ou déjà annulée n'est pas annulable ici.
+ */
+export async function annulerCommande(clientId: string, commandeId: string) {
+  const c = await db.connect()
+  try {
+    await c.query('BEGIN')
+
+    const { rows } = await c.query(
+      `SELECT statut, total_mad FROM commandes
+       WHERE commande_id = $1 AND client_id = $2 FOR UPDATE`,
+      [commandeId, clientId]
+    )
+    if (!rows[0]) {
+      throw new Error(`Commande ${commandeId} introuvable pour ce client.`)
+    }
+    if (rows[0].statut === 'annulée') {
+      throw new Error(`La commande ${commandeId} est déjà annulée.`)
+    }
+    if (rows[0].statut === 'livrée') {
+      throw new Error(
+        `La commande ${commandeId} est déjà livrée : l'annulation relève du commerçant. Appelle escalader avec le motif reclamation.`
+      )
+    }
+
+    const { rows: lignes } = await c.query(
+      `SELECT ref, modele, quantite FROM commande_lignes WHERE commande_id = $1`,
+      [commandeId]
+    )
+    for (const l of lignes) {
+      await c.query(`UPDATE produits SET stock = stock + $1 WHERE ref = $2`, [l.quantite, l.ref])
+    }
+
+    await c.query(`UPDATE commandes SET statut = 'annulée' WHERE commande_id = $1`, [commandeId])
+    await c.query('COMMIT')
+
+    return {
+      annulee: true,
+      commande_id: commandeId,
+      montant_annule_mad: rows[0].total_mad,
+      articles_remis_en_stock: lignes,
     }
   } catch (e) {
     await c.query('ROLLBACK')

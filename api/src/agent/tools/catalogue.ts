@@ -33,10 +33,18 @@ export async function getProduct(ref: string): Promise<Produit | null> {
   return rows[0] ?? null
 }
 
-/** Stock réel. Zéro = indisponible. */
+/**
+ * Stock réel. Zéro = indisponible.
+ * Une référence inexistante lève une erreur : renvoyer 0 laissait croire
+ * au modèle qu'une référence inventée était simplement en rupture.
+ */
 export async function checkStock(ref: string): Promise<number> {
   const { rows } = await db.query(`SELECT stock FROM produits WHERE ref = $1`, [ref])
-  return rows[0]?.stock ?? 0
+  if (!rows[0]) throw new Error(
+    `Référence inconnue : ${ref}. Elle n'existe pas au catalogue. ` +
+    `Appelle rechercher_produit et réutilise EXACTEMENT la référence du résultat.`
+  )
+  return rows[0].stock
 }
 
 /** Alternatives réellement disponibles, même famille. */
@@ -50,4 +58,27 @@ export async function findAlternatives(ref: string, limit = 3): Promise<Produit[
     [ref, limit]
   )
   return rows
+}
+
+/** Ce que la boutique propose vraiment, par famille : pour « chnou kayn 3andkom ? ». */
+export async function apercuCatalogue() {
+  const { rows } = await db.query(
+    `SELECT famille,
+            count(*)::int   AS refs,
+            sum(stock)::int AS stock,
+            min(prix_mad)   AS prix_min,
+            max(prix_mad)   AS prix_max
+     FROM produits
+     GROUP BY famille
+     HAVING sum(stock) > 0
+     ORDER BY sum(stock) DESC`
+  )
+  return {
+    verifie: true,
+    familles: rows.map(r => ({
+      famille: r.famille,
+      articles_en_stock: r.stock,
+      prix_mad: `${Number(r.prix_min).toFixed(0)}–${Number(r.prix_max).toFixed(0)}`,
+    })),
+  }
 }
